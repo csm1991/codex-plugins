@@ -1,29 +1,36 @@
 # Final Report and Codex Review Directives
 
-Use this guidance when assembling the final Codex Security markdown report and Codex app review directives.
+Use this guidance when authoring canonical report semantics and returning the generated Codex Security report and review directives.
 
 ## Final Outputs
 
-The final outputs are:
+The final readable output is a deterministic projection of `scan-manifest.json`, `findings.json`, and `coverage.json`:
 
-- primary readable report at the final HTML scan report path from `scan-artifacts.md`
-- markdown report source used to generate the HTML report, at the final scan report path from `scan-artifacts.md`
+- primary readable markdown report at the final scan report path from `scan-artifacts.md`
+- optional detailed vulnerability write-ups under `findings/<slug>/`, linked from the primary report through `finding.writeup.reportPath`
+- optional structural hardening guidance under `hardening/`, linked from the primary report through `scan.hardening.portfolioPath`
 
-Use `report.html` as the primary readable entry point. Explain report-relevant artifact paths in the report itself, especially in `Scope`, `Reviewed Surfaces`, and `Open Questions And Follow Up`.
+When writing `findings.json` alongside this readable output, populate the optional structured details in `finding-detail-fields.md` from the same validated evidence. Do not parse the rendered report back into finding data.
 
-Every scan mode uses the same final report pipeline: repository-wide scans, scoped-path scans, diff scans, commit scans, branch-diff scans, working-tree scans, and Deep Security Scan all write the same `report.md` structure and render the same `report.html` template. Do not invent a scan-mode-specific report shape.
+Use `report.md` as the primary readable entry point. Explain report-relevant artifact paths in the report itself, especially in `Scope`, `Reviewed Surfaces`, and `Open Questions And Follow Up`.
 
-After writing `report.md`, run the deterministic report validator:
+In the final response, link the generated markdown report path as the primary readable artifact.
 
-`python3 <plugin_dir>/scripts/validate_report_format.py --report-md <scan_dir>/report.md`
+Every scan mode uses the same final report pipeline. The model authors canonical JSON only; it must not author, repair, or treat an existing `report.md` as input. `complete-scan` invokes finalization, which validates and enriches the canonical JSON, seals the canonical JSON and evidence artifacts, then deterministically generates and validates `report.md` as an unsealed downstream projection. Missing report prose must be added to the structured canonical fields rather than recovered from a separately authored report.
 
-If validation fails, record the validator output in `<scan_dir>/report_validation.md`, treat each error as a concrete repair checklist, repair `report.md` from existing scan artifacts, and rerun the validator before rendering HTML. Keep passing the same `report.md` path back to the validator after each repair until it passes or reaches a terminal blocker. Do not remove required fields, required subsections, or findings merely to satisfy the validator; populate missing values from the discovery, validation, attack-path, and coverage artifacts, or record the exact missing proof as the field value when the final-report format allows uncertainty. If the validation failure cannot be repaired from existing scan artifacts, record a terminal report-generation blocker in `<scan_dir>/report_validation.md` and do not silently switch to a different report format.
+When `complete_codex_security_scan` is available, use it to complete the scan. In Codex CLI or another terminal/chat host without that tool, run `python <plugin_dir>/scripts/finalize_scan_contract.py --scan-dir <scan_dir> --source-root <repo_root>` after writing the completed canonical JSON. Do not mark the scan goal complete until this command succeeds and the generated markdown report exists.
 
-Generate the HTML report from the validated markdown report with:
+Canonical report semantics live in these fields:
 
-`python3 <plugin_dir>/scripts/render_report_html.py --template <plugin_dir>/assets/report_template_inlined.html --report-md <scan_dir>/report.md --report-html <scan_dir>/report.html --title "<repo_name> Codex Security Scan"`
+- `scan-manifest.json`: `scan.scope` and `scan.threatModel`
+- `findings.json`: each finding's `summary`, `codeEvidence`, `rootCause`, `validation`, `attackPath.dataflow`, `attackPath.reachability`, `severity.rationale`, `severity.changeConditions`, `remediation`, `remediationTests`, and `preventiveControls`
+- `findings.json`: optional `writeup.reportPath` for a derived, unsealed detailed vulnerability report written under `findings/<slug>/<slug>.md`
+- `scan-manifest.json`: optional `scan.hardening.portfolioPath` for the derived, unsealed design portfolio at `hardening/hardening.md`
+- `coverage.json`: `surfaces` including `riskArea` and `notes`, plus `openQuestions`
 
-If the validator, renderer, or template is missing, repair the skill resource path or record a terminal report-generation blocker in `<scan_dir>/report_validation.md`. Do not silently substitute another validator, renderer, or HTML template.
+Older v1 producers may omit the new optional fields. Finalization uses explicit JSON-derived fallback text in that case; it never reads a pre-existing report to fill gaps.
+
+When `scan.hardening.portfolioPath` is present, include a short `## Structural Hardening` section linking the portfolio. Keep individual proposal links and the full option analysis in `hardening/hardening.md` rather than copying them into the primary scan report. The portfolio is design guidance, not evidence that any finding has been remediated.
 
 When there are no reportable findings, include a short `No findings` section that explains why nothing survived discovery or the later reportability gates. For repository-wide and scoped-path scans with a coverage ledger, still include `Reviewed Surfaces` so checked, rejected, not-applicable, and follow-up-needed surfaces remain auditable.
 
@@ -38,7 +45,7 @@ Set the finding category and CWE from the primary broken control. Do not add sec
 
 Examples that should normally become separate final findings include SQL API modes such as `execute`, `executemany`, and `executescript`; deserializer variants such as `pickle.load`, `pickle.loads`, `yaml.load`, and `yaml.load_all`; distinct path/file helper calls; SSRF modes with different destination controls; and missing-auth protected actions such as create, delete, reset, admin, and job-trigger endpoints.
 
-Before writing the report, reconcile each final finding against its candidate-ledger path from `scan-artifacts.md`, the saved validation closure table, and the repository coverage ledger when those artifacts exist. Every final candidate finding must have discovery, validation, and attack-path receipts for the same candidate id, or an explicit follow-up-needed reason for the missing proof. Start from validated rows marked `reportable` or `survives: yes`, not only from the most polished candidate narrative. Every `reportable` seeded or root-control ledger row must become a finding with the same root-control file:line. Rows closed as `suppressed`, `not_applicable`, or `deferred` should appear in `Reviewed Surfaces` using public-facing outcomes such as `Rejected`, `Not applicable`, or `Needs follow-up`. Do not silently drop a seeded/root-control row because a same-family neighboring finding survived. If attack-path analysis omitted a reportable validation row, assemble a concise attack path from the validation evidence and threat model rather than dropping the row.
+Before completing canonical JSON, reconcile each final finding against its candidate-ledger path from `scan-artifacts.md`, the saved validation closure table, and the repository coverage ledger when those artifacts exist. Every final candidate finding must have discovery, validation, and attack-path receipts for the same candidate id, or an explicit follow-up-needed reason for the missing proof. Start from validated rows marked `reportable` or `survives: yes`, not only from the most polished candidate narrative. Every `reportable` seeded or root-control ledger row must become a canonical finding with the same root-control file:line. Rows closed as `suppressed`, `not_applicable`, or `deferred` should appear in canonical coverage surfaces using public-facing outcomes such as `Rejected`, `Not applicable`, or `Needs follow-up`. Do not silently drop a seeded/root-control row because a same-family neighboring finding survived. If attack-path analysis omitted a reportable validation row, populate a concise canonical attack path from the validation evidence and threat model rather than dropping the row.
 
 ## Report Structure
 
@@ -48,17 +55,19 @@ Use this report structure:
 
 `## Scope`
 
-List in-scope code, scan mode, artifacts reviewed, runtime or test status, and explicit exclusions or limitations. Include the generated-or-provided context used by the scan. If the threat model was generated during Phase 1 rather than provided by the user, say that clearly. Do not call generated threat-model material an external input.
+Populate `scan.scope` with in-scope context, artifacts reviewed, runtime or test status, validation mode, and explicit limitations. Include/exclude paths and coverage fields supply the remaining projected scope content. If the threat model was generated during Phase 1 rather than provided by the user, say that in canonical scope context. Do not call generated threat-model material an external input.
 
 After the scope bullets, include a compact `### Scan Summary` table when the scan has findings or repository-wide coverage. Use columns `Field` and `Value`. Include the count of reportable findings, severity mix, confidence mix, coverage, and validation mode when those values are known. Keep artifact paths below this table.
 
 `## Threat Model`
 
-Copy the scan threat model into this section from `<context_dir>/threat_model.md`. If it is long, keep its headings and concise bullets, and remove only duplicated prose that is already covered by `Scope`. Do not replace the threat model with separate product-context or invariants sections.
+Populate `scan.threatModel` from the completed threat-model analysis. The detailed `<context_dir>/threat_model.md` may remain supporting evidence, but finalization reads only the canonical threat-model object when projecting this section.
 
 `## Findings`
 
 Start this section with the findings summary table.
+
+For Deep Security Scan outputs, group the summary table by `extensions.candidateId` and use columns `Findings`, `Reports`, `Severity`, `Confidence`, and `Detailed write-up`. `deep_repository` scans always use this presentation. Scoped-path deep outputs use it when the reportable child findings carry the deep-scan identifiers described below; ordinary scoped standard scans keep the standard table. Emit one table row per reportable canonical DSS finding. `Findings` contains the vulnerability title without duplicated trailing report or provenance annotations. `Reports` lists every child finding's unique `extensions.reportId`, with each id linking to that child's detailed summary section. For compatibility with older deep-scan artifacts, fall back to `extensions.ledgerRowId`; when a ledger row produced multiple reports, use each child's unique trailing title annotation or instance identity rather than displaying duplicate labels. `Detailed write-up` lists the corresponding `writeup.reportPath` link for every child report. Preserve every child report as its own detailed section below the grouped table. When child reports have different severity or confidence levels, list every distinct level in the grouped row. In the scan summary, distinguish the number of reportable DSS findings from the number of child report instances. For every other scan mode, preserve the standard columns `Finding`, `Severity`, `Confidence`, and `Detailed write-up`, with the finding title linking to the detailed summary section.
 
 After the summary table, include a compact `### Confidence Scale` table with columns `Label` and `Meaning`:
 
@@ -66,7 +75,9 @@ After the summary table, include a compact `### Confidence Scale` table with col
 - `medium`: source evidence supports a plausible issue, but runtime behavior, deployment configuration, role reachability, type constraints, or exploit reliability still need proof.
 - `low`: weak or incomplete evidence; include only when the user explicitly wants follow-up candidates in the final report.
 
-Then render each finding as:
+When a finding records `writeup.reportPath`, link the detailed report from the findings summary and do not duplicate the complete finding inline. The linked write-up is a derived, unsealed readable output; the canonical finding remains the source of truth for adapters and regeneration. Findings without a write-up continue to use the inline format below for compatibility.
+
+Render each inline finding as:
 
 `### [<number>] <title>`
 
@@ -81,7 +92,7 @@ For each finding include a compact two-column metadata table immediately below t
 
 Use a concrete category such as `Authorization bypass / IDOR`, `Path traversal`, `SQL injection`, `XXE`, `Open redirect`, or `Hardcoded credentials`. Do not use generic placeholders such as `security scan finding`.
 
-The summary table should link each finding title to its detailed finding section with an intra-document markdown anchor. Keep the link text identical to the detailed heading title, without the numeric prefix. Use the detailed heading slug generated from `[<number>] <title>`; for example, link finding 1 to `#1-example-title`.
+For standard scan modes, the summary table should link each finding title to its detailed finding section with an intra-document markdown anchor. For the Deep Security Scan grouped presentation, the report id in the `Reports` column owns that link instead. Keep the displayed vulnerability title and report id aligned with the corresponding detailed heading. Use the explicit finding anchor emitted by the deterministic projection.
 The summary table and the detailed finding sections must use the same descending severity order: all `critical` findings first, then `high`, then `medium`, then `low`. Renumber findings after sorting so the table order, detailed headings, and anchors match.
 
 Affected lines must include the root broken control or dangerous sink line when that line is identifiable, not only the public wrapper, route, or caller that makes it reachable. For wrapper-to-shared-helper findings, list both the reachable wrapper/entrypoint and the underlying parser, deserializer, path/archive helper, expression evaluator, or auth/authz control line. If a seeded file, class, package, or hunk shares the surviving proof tuple, keep that seed anchor in affected lines instead of replacing it with a broader sibling-only location. If the bug is caused by unsafe transformation or selection before the sink, include the split, parse, canonicalization, normalization, comparison, regex, object-selection, or object-binding line where the control fails. For parser, XML, deserialization, and object-construction findings, include the concrete codec, converter, deserializer, parser feature setup, resolver, class filter, or container handler line when that line performs recursive parsing, type resolution, object conversion, class filtering, or fail-open hardening. For central file-format object models, include low-level helper lines such as `to*Array`, `toList`, `getObject`, numeric conversion, iterator, size-based allocation, unchecked cast, or collection-to-array loops when those helpers are the broken malformed-input control. For recursive placeholder/template findings, include the helper/parser setup line that enables recursive expansion or expression evaluation, not only the later resolver or render call. For resource-serving findings, include the allowlist, path-matcher, URL decoding, canonicalization, or resource-selection line that decides whether the attacker-selected resource is allowed. For stateful authentication protocol findings, include the principal/credential/token/issuer installation, rebind/reauthentication, or validated-vs-consumed object-selection line that creates the auth bypass. For SSO/SAML/federation findings, include the response/assertion selection, signed-object lookup, cloned/returned assertion, subject, audience, recipient, destination, ACS URL, or issuer-binding line that determines which identity object is trusted. For polymorphic or request-selected handler, operation, converter, filter, validator, or strategy families, include the concrete subclass/implementation line that transforms, validates, canonicalizes, selects, or reinterprets attacker input before a shared sink/control, including specialized helper methods and branch predicates inside the concrete class when they perform or enable the unsafe transform. If a special-case branch such as append, wildcard, fallback, copy/move `from`, default-value, or type-resolution handling bypasses or narrows validation, include that branch-local root-control line even when a shared helper is also affected. If the finding text says a shared flaw affects "all", "every", or "any" concrete operation, codec, converter, handler, validator, filter, or resolver, the affected lines must include the concrete implementations identified during discovery or validation; do not rely on "and related classes" prose for independently reachable root-control lines. If equivalent resolver/filter controls are duplicated across core, server, client, remoting, plugin, or import packages, include the runtime/exported implementation that enforces the broken control. For repeated vulnerable templates, routes, query builders, parser operations, or auth/object-access endpoints, keep each independently vulnerable file and line as its own affected instance; do not hide sibling instances as extra context on one representative finding when they can be attacked independently. The Codex review directive should point at the tightest root-cause line unless the wrapper or concrete implementation line is the actual broken control.
@@ -90,12 +101,21 @@ Then render these subsections under each finding:
 
 - `#### Summary`
   - Explain why the issue matters, what the vulnerable path is, and why the current controls are insufficient.
+  - Wrap code identifiers, RPC names, functions, types, fields, parameters, configuration keys, and literal values in single backticks.
+- `#### Root Cause`
+  - State the violated security invariant and explain exactly how the implementation breaks it.
+  - Walk the vulnerable call stack from the code that accepts or decodes user-controlled input through each meaningful call or transformation to the missing control, dangerous operation, and security-relevant consumer. Do not begin at the sink when an earlier input boundary is known.
+  - Give every displayed `codeEvidence` item a role and an explanation that names the carried value and the next callee or state transition. Order `rootCause.evidenceRefs` from input to outcome, with any `expected_control` comparison after the vulnerable stack.
+  - Show the smallest complete snippets needed for that walkthrough. Omit incidental helpers, but do not skip a call boundary whose behavior is necessary to understand how attacker input reaches the broken invariant.
+  - Do not emit generic prose that only repeats an affected `path:line` already present in the metadata table.
 - `#### Validation`
   - Include method, checklist items, evidence, and remaining uncertainty.
+  - Pair each important validation claim with actual source in `validation.evidenceRefs`; a list of file names and line numbers is not sufficient evidence for the readable finding.
 - `#### Dataflow`
   - Show the technical source-to-sink path inside the code, such as request parameter -> controller -> service/helper -> dangerous sink -> response or side effect.
 - `#### Reachability`
   - Explain who can realistically trigger the dataflow, from what boundary, under what preconditions, and what attacker outcome follows. Fold any attack-path facts into this prose or compact bullets instead of emitting a separate `Attack Path Facts` section.
+  - Use `attackPath.evidenceRefs` for the few code transitions that establish attacker input, the missing control, and the resulting sink or state change. Keep this shorter than Validation.
 - `#### Severity`
   - State the final severity and then explain the rationale.
   - Treat likelihood and impact as inputs to the final severity, not as separate report labels.
@@ -135,7 +155,15 @@ Each finding should make it easy for an application security engineer or softwar
 - why the severity landed where it did
 - what the smallest safe fix is
 
-Include both final report paths in the response so the user can find the markdown and HTML reports easily.
+Include the final markdown report path in the response so the user can find the readable report easily.
+
+After a completed scan:
+
+- If the scan found reportable issues, ask whether the user wants to export the findings as JSON, SARIF, or CSV, generate patches, or track selected findings. Name the highest-priority finding.
+- Offer tracking only when `$track-findings` can use an available destination, such as Linear, Jira, or GitHub Issues. Name the destination in the question.
+- If the report names a specific follow-up, ask whether the user wants to investigate it.
+- If the scan found nothing and has no specific follow-up, do not add a generic question.
+- Wait for the user's answer before exporting findings, generating patches, tracking findings, or starting another scan.
 
 ## Codex Review Directives
 
